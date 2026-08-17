@@ -36,6 +36,10 @@ services:
       retries: 12
     restart: unless-stopped
 
+  # Long-running instead of one-shot: Coolify injects a restart policy into
+  # every service, so a one-shot init container restart-loops and a
+  # service_completed_successfully dependency never resolves. This variant
+  # creates the bucket, flags health, and idles.
   minio-init:
     image: minio/mc:latest
     depends_on:
@@ -47,7 +51,21 @@ services:
     entrypoint:
       - /bin/sh
       - -c
-      - mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" && mc mb --ignore-existing local/agentfs
+      - |
+        until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do
+          echo "waiting for minio..."; sleep 2
+        done
+        mc mb --ignore-existing local/agentfs
+        touch /tmp/agentfs-bucket-ready
+        echo "minio init complete, idling"
+        exec sleep infinity
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/agentfs-bucket-ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    restart: unless-stopped
 
   agent-fs:
     image: ghcr.io/desplega-ai/agent-fs:0.12.2
@@ -55,7 +73,7 @@ services:
     pull_policy: always
     depends_on:
       minio-init:
-        condition: service_completed_successfully
+        condition: service_healthy
     environment:
       - AGENT_FS_HOME=/data
       - HOST=0.0.0.0
