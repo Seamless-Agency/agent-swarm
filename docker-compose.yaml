@@ -135,6 +135,11 @@ services:
       - swarm_api:/app
     expose:
       - "3013"
+    # Dual-homed: default network for intra-stack traffic (workers -> api),
+    # coolify network so the Traefik proxy can reach it for the public domain.
+    networks:
+      - default
+      - coolify
     healthcheck:
       test:
         [
@@ -227,6 +232,10 @@ services:
       - swarm_shared:/workspace/shared
       - swarm_worker_2:/workspace/personal
     restart: unless-stopped
+
+networks:
+  coolify:
+    external: true
 
 volumes:
   agent_fs_minio:
