@@ -131,24 +131,13 @@ services:
       - SLACK_DISABLE=${SLACK_DISABLE:-true}
       - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN:-}
       - SLACK_APP_TOKEN=${SLACK_APP_TOKEN:-}
-    # MIGRATION PHASE 1 (temporary): the image declares VOLUME /app/data, so the
-    # DB has been living in an ANONYMOUS volume that survives redeploys but not
-    # stop/start cycles (that is what reset the setup on 2026-08-18). This boot
-    # wrapper copies the current DB into the named volume swarm_api_data before
-    # the server starts. Phase 2 remounts swarm_api_data at /app/data and
-    # removes this wrapper.
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        if [ -f /app/data/agent-swarm-db.sqlite ] && [ ! -f /app/data-new/agent-swarm-db.sqlite ]; then
-          echo "[migrate] copying DB from anonymous volume to swarm_api_data"
-          cp -a /app/data/. /app/data-new/
-        fi
-        exec /api-entrypoint.sh
     volumes:
       - swarm_api:/app
-      - swarm_api_data:/app/data-new
+      # Explicit named volume at /app/data: the image declares VOLUME /app/data,
+      # and without this mapping Docker backs the DB with an ANONYMOUS volume
+      # that is silently dropped when containers are removed (stop/start),
+      # wiping all swarm state. Never remove this mapping.
+      - swarm_api_data:/app/data
     expose:
       - "3013"
     # Dual-homed: default network for intra-stack traffic (workers -> api),
